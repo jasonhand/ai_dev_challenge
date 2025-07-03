@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Github, Users, Code, Zap, Settings, Plus, X, Trash2, BookOpen, Share2, Copy } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Github, Users, Code, Zap, Settings, Plus, X, Trash2, Share2, Copy } from 'lucide-react';
 import { ApolloProvider } from '@apollo/client';
 import { apolloClient } from './services/apolloClient';
 import { GitHubAuth } from './services/githubAuth';
@@ -108,7 +108,7 @@ const ChallengeHub = () => {
   }, []);
 
   // Default repository that's always included
-  const defaultRepo: RepoConfig = {
+  const defaultRepo = useMemo<RepoConfig>(() => ({
     id: 1,
     name: "Ambient Weather",
     description: "Dashboard",
@@ -116,7 +116,7 @@ const ChallengeHub = () => {
     demoUrl: "https://ambient-weather.lovable.app/",
     contributors: ["jasonhand"],
     dateAdded: new Date().toISOString()
-  };
+  }), []);
 
   // Load challenge repos from browser storage on mount
   useEffect(() => {
