@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Github, ExternalLink, Calendar, Users, Code, Zap, Star, GitBranch, Settings, Plus, X, Trash2 } from 'lucide-react';
+import { Github, ExternalLink, Calendar, Users, Code, Zap, Settings, Plus, X, Trash2, BookOpen, Share2, Copy } from 'lucide-react';
+import { DatadogRUM, useDatadogTracking } from './components/DatadogRUM';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { GitWorkflowGuide } from './components/GitWorkflowGuide';
 
 interface RepoConfig {
   id: number;
@@ -7,6 +10,7 @@ interface RepoConfig {
   description: string;
   repoUrl: string;
   demoUrl?: string;
+  contributors: string[];
   dateAdded: string;
 }
 
@@ -16,12 +20,8 @@ interface RepoData {
   owner: string;
   repo: string;
   url: string;
-  stars: number;
-  forks: number;
-  language: string;
   updated: string;
   contributors: string[];
-  commits: number;
 }
 
 interface AdminPanelProps {
@@ -41,6 +41,9 @@ const ChallengeHub = () => {
   const [challengeRepos, setChallengeRepos] = useState<RepoConfig[]>([]);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAddRepo, setShowAddRepo] = useState(false);
+  const [showGitGuide, setShowGitGuide] = useState(false);
+  const [selectedRepoForGuide, setSelectedRepoForGuide] = useState<string>('');
+  const { trackRepositoryAction, trackAdminAction, trackError, trackUserInteraction } = useDatadogTracking();
   const [challengeStartDate] = useState<Date>(() => {
     // Get Monday of current week as default start date
     const today = new Date();
@@ -52,19 +55,49 @@ const ChallengeHub = () => {
   });
   const [repoData, setRepoData] = useState<Record<string, RepoData>>({});
   const [loading, setLoading] = useState(false);
+  const [sharedUrl, setSharedUrl] = useState<string>('');
+  const [dataCaptureDate, setDataCaptureDate] = useState<string>('');
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // Load challenge repos from browser storage on mount
   useEffect(() => {
-    const savedRepos = JSON.parse(localStorage.getItem('challengeRepos') || '[]');
-    setChallengeRepos(savedRepos);
+    // Check for shared data in URL first
+    const urlParams = new URLSearchParams(window.location.search);
+    const sharedData = urlParams.get('data');
+    const captureDate = urlParams.get('captured');
     
-    // Load cached repo data
-    const savedRepoData = JSON.parse(localStorage.getItem('repoData') || '{}');
-    setRepoData(savedRepoData);
+    if (sharedData && captureDate) {
+      try {
+        const decodedData = JSON.parse(atob(sharedData));
+        setChallengeRepos(decodedData.repos || []);
+        setRepoData(decodedData.repoData || {});
+        setDataCaptureDate(captureDate);
+        setSharedUrl(window.location.href);
+        
+        // Save to localStorage
+        localStorage.setItem('challengeRepos', JSON.stringify(decodedData.repos || []));
+        localStorage.setItem('repoData', JSON.stringify(decodedData.repoData || {}));
+        
+        // Track shared data load
+        trackUserInteraction('load_shared_data', { 
+          repo_count: (decodedData.repos || []).length,
+          capture_date: captureDate 
+        });
+      } catch (error) {
+        console.error('Failed to decode shared data:', error);
+        trackError(error as Error, { action: 'decode_shared_data' });
+      }
+    } else {
+      // Load from localStorage
+      const savedRepos = JSON.parse(localStorage.getItem('challengeRepos') || '[]');
+      setChallengeRepos(savedRepos);
+      
+      const savedRepoData = JSON.parse(localStorage.getItem('repoData') || '{}');
+      setRepoData(savedRepoData);
 
-    // If we have repos but no data, fetch it
-    if (savedRepos.length > 0 && Object.keys(savedRepoData).length === 0) {
-      fetchAllRepoData(savedRepos);
+      if (savedRepos.length > 0 && Object.keys(savedRepoData).length === 0) {
+        fetchAllRepoData(savedRepos);
+      }
     }
   }, []);
 
@@ -86,29 +119,20 @@ const ChallengeHub = () => {
     
     const [, owner, repo] = match;
     
-    // Mock data - in real app, fetch from GitHub API
-    return new Promise(resolve => {
-      setTimeout(() => {
-        resolve({
-          name: repo.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-          description: `A demo project for the AI Dev Challenge`,
-          owner: owner,
-          repo: repo,
-          url: repoUrl,
-          stars: Math.floor(Math.random() * 20),
-          forks: Math.floor(Math.random() * 10),
-          language: ['React', 'Vue.js', 'Next.js', 'JavaScript', 'TypeScript'][Math.floor(Math.random() * 5)],
-          updated: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-          contributors: [
-            owner,
-            ...Array.from({length: Math.floor(Math.random() * 4)}, () => 
-              ['alice', 'bob', 'charlie', 'diana', 'eve', 'frank'][Math.floor(Math.random() * 6)]
-            )
-          ],
-          commits: Math.floor(Math.random() * 50) + 5
-        });
-      }, 500);
-    });
+      // Return basic repo info without mock data
+  return new Promise(resolve => {
+    setTimeout(() => {
+      resolve({
+        name: repo.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        description: `A demo project for the AI Dev Challenge`,
+        owner: owner,
+        repo: repo,
+        url: repoUrl,
+        updated: new Date().toISOString(),
+        contributors: [owner]
+      });
+    }, 100);
+  });
   };
 
   const fetchAllRepoData = async (repos: RepoConfig[]) => {
@@ -138,11 +162,19 @@ const ChallengeHub = () => {
     };
     const newRepos = [...challengeRepos, newRepo];
     setChallengeRepos(newRepos);
+    
+    // Track repository addition
+    trackRepositoryAction('added', repoConfig.repoUrl, repoConfig.name);
+    trackAdminAction('add_repository', { repo_url: repoConfig.repoUrl, repo_name: repoConfig.name });
+    
     fetchRepoData(repoConfig.repoUrl).then(data => {
       if (data) {
         setRepoData(prev => ({ ...prev, [repoConfig.repoUrl]: data }));
       }
+    }).catch(error => {
+      trackError(error, { action: 'fetch_repo_data', repo_url: repoConfig.repoUrl });
     });
+    
     setShowAddRepo(false);
   };
 
@@ -153,19 +185,54 @@ const ChallengeHub = () => {
       delete newData[repoUrl];
       return newData;
     });
+    
+    // Track repository removal
+    trackRepositoryAction('removed', repoUrl);
+    trackAdminAction('remove_repository', { repo_url: repoUrl });
   };
 
   const refreshRepoData = () => {
+    trackAdminAction('refresh_data', { repo_count: challengeRepos.length });
     fetchAllRepoData(challengeRepos);
+  };
+
+  const generateShareUrl = () => {
+    const dataToShare = {
+      repos: challengeRepos,
+      repoData: repoData
+    };
+    
+    const encodedData = btoa(JSON.stringify(dataToShare));
+    const captureDate = new Date().toISOString();
+    const shareUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}&captured=${encodeURIComponent(captureDate)}`;
+    
+    setSharedUrl(shareUrl);
+    setDataCaptureDate(captureDate);
+    setShowShareModal(true);
+    
+    trackUserInteraction('generate_share_url', { 
+      repo_count: challengeRepos.length,
+      capture_date: captureDate 
+    });
+  };
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(sharedUrl);
+      trackUserInteraction('copy_share_url', { url_length: sharedUrl.length });
+      // You could add a toast notification here
+    } catch (error) {
+      console.error('Failed to copy URL:', error);
+      trackError(error as Error, { action: 'copy_share_url' });
+    }
   };
 
   // Get unique contributors across all repos
   const allContributors = Array.from(new Set(
-    Object.values(repoData).flatMap(repo => repo.contributors || [])
+    challengeRepos.flatMap(repo => repo.contributors || [])
   ));
 
-  const totalCommits = Object.values(repoData).reduce((sum: number, repo: RepoData) => sum + (repo.commits || 0), 0);
-  const totalStars = Object.values(repoData).reduce((sum: number, repo: RepoData) => sum + (repo.stars || 0), 0);
+
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
   
@@ -229,15 +296,46 @@ const ChallengeHub = () => {
           <div className="flex items-center justify-center mb-4">
             <Zap className="h-8 w-8 text-purple-600 mr-2" />
             <h1 className="text-4xl font-bold text-gray-900">AI Dev Challenge Hub</h1>
-            <button
-              onClick={() => setShowAdminPanel(true)}
-              className="ml-4 p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Admin Panel"
-            >
-              <Settings className="h-5 w-5" />
-            </button>
+            <div className="ml-4 flex space-x-2">
+              <button
+                onClick={generateShareUrl}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Share Challenge"
+              >
+                <Share2 className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => {
+                  setShowGitGuide(true);
+                  trackUserInteraction('open_git_guide');
+                }}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Git Workflow Guide"
+              >
+                <BookOpen className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => {
+                  setShowAdminPanel(true);
+                  trackUserInteraction('open_admin_panel');
+                }}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Admin Panel"
+              >
+                <Settings className="h-5 w-5" />
+              </button>
+            </div>
           </div>
           <p className="text-xl text-gray-600 mb-6">Track GitHub repositories as they evolve through the AI Dev Challenge</p>
+          
+          {/* Shared Data Info */}
+          {dataCaptureDate && (
+            <div className="mb-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-blue-800 text-sm">
+                📅 <strong>Shared Challenge Data</strong> - Captured on {new Date(dataCaptureDate).toLocaleString()}
+              </p>
+            </div>
+          )}
           
           {/* Progress Timeline */}
           <div className="flex justify-center items-center space-x-4 mb-6">
@@ -256,7 +354,7 @@ const ChallengeHub = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow-md p-6">
             <div className="flex items-center">
               <Code className="h-8 w-8 text-blue-600" />
@@ -272,24 +370,6 @@ const ChallengeHub = () => {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-500">Active Developers</p>
                 <p className="text-2xl font-bold text-gray-900">{allContributors.length}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center">
-              <GitBranch className="h-8 w-8 text-purple-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">Total Commits</p>
-                <p className="text-2xl font-bold text-gray-900">{totalCommits}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center">
-              <Star className="h-8 w-8 text-yellow-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">Total Stars</p>
-                <p className="text-2xl font-bold text-gray-900">{totalStars}</p>
               </div>
             </div>
           </div>
@@ -384,16 +464,8 @@ const ChallengeHub = () => {
 
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center space-x-4 text-sm text-gray-500">
-                            <span className="flex items-center">
-                              <GitBranch className="h-4 w-4 mr-1" />
-                              {data.commits}
-                            </span>
-                            <span className="flex items-center">
-                              <Star className="h-4 w-4 mr-1" />
-                              {data.stars}
-                            </span>
-                            <span className="px-2 py-1 bg-gray-100 rounded text-xs">
-                              {data.language}
+                            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                              Challenge Repo
                             </span>
                           </div>
                         </div>
@@ -401,14 +473,22 @@ const ChallengeHub = () => {
                         <div className="mb-4">
                           <p className="text-xs text-gray-500 mb-1">Contributors:</p>
                           <div className="flex flex-wrap gap-1">
-                            {data.contributors.slice(0, 5).map((contributor, index) => (
-                              <span key={index} className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
-                                @{contributor}
-                              </span>
-                            ))}
-                            {data.contributors.length > 5 && (
+                            {repoConfig.contributors && repoConfig.contributors.length > 0 ? (
+                              <>
+                                {repoConfig.contributors.slice(0, 5).map((contributor, index) => (
+                                  <span key={index} className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                                    @{contributor}
+                                  </span>
+                                ))}
+                                {repoConfig.contributors.length > 5 && (
+                                  <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">
+                                    +{repoConfig.contributors.length - 5} more
+                                  </span>
+                                )}
+                              </>
+                            ) : (
                               <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">
-                                +{data.contributors.length - 5} more
+                                No contributors added yet
                               </span>
                             )}
                           </div>
@@ -417,6 +497,24 @@ const ChallengeHub = () => {
                     )}
 
                     <div className="space-y-3">
+                      {/* Get Started Button */}
+                      <button
+                        onClick={() => {
+                          setSelectedRepoForGuide(repoConfig.repoUrl);
+                          setShowGitGuide(true);
+                          trackUserInteraction('open_git_guide_for_repo', { repo_url: repoConfig.repoUrl });
+                        }}
+                        className={`w-full px-3 py-2 rounded-lg font-medium transition-colors flex items-center justify-center text-sm ${
+                          currentDayIndex === -1 || currentDayIndex >= 5
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                        disabled={currentDayIndex === -1 || currentDayIndex >= 5}
+                      >
+                        <BookOpen className="h-4 w-4 mr-1" />
+                        {currentDayIndex === -1 ? 'Challenge Not Started' : currentDayIndex >= 5 ? 'Challenge Ended' : 'Get Started Guide'}
+                      </button>
+                      
                       {/* Contribution Actions */}
                       <div className="grid grid-cols-2 gap-2">
                         <a
@@ -429,7 +527,7 @@ const ChallengeHub = () => {
                               : 'bg-purple-600 text-white hover:bg-purple-700'
                           }`}
                         >
-                          <GitBranch className="h-4 w-4 mr-1" />
+                          <Github className="h-4 w-4 mr-1" />
                           {currentDayIndex === -1 ? 'Not Started' : currentDayIndex >= 5 ? 'Challenge Ended' : 'Fork & Contribute'}
                         </a>
                         <a
@@ -498,6 +596,73 @@ const ChallengeHub = () => {
           />
         )}
 
+        {/* Git Workflow Guide Modal */}
+        {showGitGuide && (
+          <GitWorkflowGuide
+            repoUrl={selectedRepoForGuide}
+            onClose={() => setShowGitGuide(false)}
+          />
+        )}
+
+        {/* Share Challenge Modal */}
+        {showShareModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Share Challenge</h2>
+                  <button
+                    onClick={() => setShowShareModal(false)}
+                    className="p-2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+                
+                <div className="mb-6">
+                  <p className="text-gray-600 mb-4">
+                    Share this URL with others to let them see your current challenge setup. 
+                    The URL contains all repository data and will be captured at the current time.
+                  </p>
+                  
+                  <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                    <div className="flex items-center justify-between">
+                      <input
+                        type="text"
+                        value={sharedUrl}
+                        readOnly
+                        className="flex-1 bg-transparent text-sm text-gray-700 mr-2"
+                      />
+                      <button
+                        onClick={copyToClipboard}
+                        className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors flex items-center"
+                      >
+                        <Copy className="h-4 w-4 mr-1" />
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="text-sm text-gray-500">
+                    <p><strong>Data captured:</strong> {new Date(dataCaptureDate).toLocaleString()}</p>
+                    <p><strong>Repositories:</strong> {challengeRepos.length}</p>
+                    <p><strong>Contributors:</strong> {allContributors.length}</p>
+                  </div>
+                </div>
+                
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => setShowShareModal(false)}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Instructions */}
         <div className="mt-12 bg-white rounded-lg shadow-md p-6">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">GitHub Fork & Pull Request Workflow</h2>
@@ -557,6 +722,7 @@ const ChallengeHub = () => {
 };
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ challengeRepos, onAddRepo, onRemoveRepo, onRefresh, onClose }) => {
+  const { trackUserInteraction } = useDatadogTracking();
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -612,9 +778,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ challengeRepos, onAddRepo, onRe
                     </div>
                     <p className="text-sm text-gray-600 mt-1">{repo.description}</p>
                     <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
-                      <a href={repo.repoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-purple-600">
-                        GitHub Repository
-                      </a>
+                                          <a 
+                      href={repo.repoUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="hover:text-purple-600"
+                      onClick={() => trackUserInteraction('click_github_link', { repo_url: repo.repoUrl })}
+                    >
+                      GitHub Repository
+                    </a>
                       {repo.demoUrl && (
                         <a href={repo.demoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-purple-600">
                           Live Demo
@@ -643,8 +815,10 @@ const AddRepositoryModal: React.FC<AddRepositoryModalProps> = ({ onSubmit, onClo
     name: '',
     description: '',
     repoUrl: '',
-    demoUrl: ''
+    demoUrl: '',
+    contributors: []
   });
+  const [contributorInput, setContributorInput] = useState<string>('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -713,6 +887,61 @@ const AddRepositoryModal: React.FC<AddRepositoryModalProps> = ({ onSubmit, onClo
               />
             </div>
             
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Contributors (optional)</label>
+              <div className="space-y-2">
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={contributorInput}
+                    onChange={(e) => setContributorInput(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (contributorInput.trim() && !formData.contributors.includes(contributorInput.trim())) {
+                          setFormData(prev => ({ ...prev, contributors: [...prev.contributors, contributorInput.trim()] }));
+                          setContributorInput('');
+                        }
+                      }
+                    }}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="Enter GitHub username and press Enter"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (contributorInput.trim() && !formData.contributors.includes(contributorInput.trim())) {
+                        setFormData(prev => ({ ...prev, contributors: [...prev.contributors, contributorInput.trim()] }));
+                        setContributorInput('');
+                      }
+                    }}
+                    className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Add
+                  </button>
+                </div>
+                {formData.contributors.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {formData.contributors.map((contributor, index) => (
+                      <span key={index} className="inline-flex items-center px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm">
+                        @{contributor}
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ 
+                            ...prev, 
+                            contributors: prev.contributors.filter((_, i) => i !== index) 
+                          }))}
+                          className="ml-2 text-purple-600 hover:text-purple-800"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-gray-500">Add GitHub usernames of contributors to this project</p>
+              </div>
+            </div>
             
             <div className="flex justify-end space-x-3 pt-4">
               <button
@@ -737,7 +966,13 @@ const AddRepositoryModal: React.FC<AddRepositoryModalProps> = ({ onSubmit, onClo
 };
 
 function App() {
-  return <ChallengeHub />;
+  return (
+    <ErrorBoundary>
+      <DatadogRUM>
+        <ChallengeHub />
+      </DatadogRUM>
+    </ErrorBoundary>
+  );
 }
 
 export default App;

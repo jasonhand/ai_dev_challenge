@@ -3,7 +3,9 @@
   "scripts": {
     "dev": "cd ai-dev-challenge-app && npm start",
     "build": "cd ai-dev-challenge-app && npm run build",
-    "test": "cd ai-dev-challenge-app && npm test"
+    "test": "cd ai-dev-challenge-app && npm test",
+    "deploy": "cd ai-dev-challenge-app && npm run deploy",
+    "predeploy": "cd ai-dev-challenge-app && npm run predeploy"
   },
   "dependencies": {
     "lucide-react": "^0.525.0"
