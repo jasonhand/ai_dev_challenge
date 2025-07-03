@@ -21,15 +21,34 @@ jobs:
         cache: 'npm'
         cache-dependency-path: ai-dev-challenge-app/package-lock.json
         
-    - name: Install dependencies
+    - name: Debug - Checkout verification
       run: |
-        cd ai-dev-challenge-app
+        echo "Repository root:"
+        ls -la
+        echo "ai-dev-challenge-app directory:"
+        ls -la ai-dev-challenge-app/
+        
+    - name: Install dependencies
+      working-directory: ./ai-dev-challenge-app
+      run: |
         npm ci
+        echo "Node version: $(node --version)"
+        echo "NPM version: $(npm --version)"
+        echo "React Scripts version:"
+        npm list react-scripts
+        
+    - name: Debug - List files
+      working-directory: ./ai-dev-challenge-app
+      run: |
+        echo "Current directory: $(pwd)"
+        echo "Listing public directory:"
+        ls -la public/
+        echo "Listing root directory:"
+        ls -la
         
     - name: Build
-      run: |
-        cd ai-dev-challenge-app
-        npm run build
+      working-directory: ./ai-dev-challenge-app
+      run: npm run build
         
     - name: Deploy to GitHub Pages
       if: github.ref == 'refs/heads/main'

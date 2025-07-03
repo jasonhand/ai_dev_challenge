@@ -4,12 +4,13 @@ A React-based dashboard for tracking GitHub repositories as they evolve through 
 
 ## 🚀 Features
 
-- **Repository Tracking**: Monitor GitHub repositories by URL with real-time metadata
+- **Repository Tracking**: Monitor GitHub repositories by URL with user-provided metadata
 - **Challenge Timeline**: Dynamic 5-day timeline showing current challenge progress (Monday-Friday)
-- **Statistics Dashboard**: Aggregate stats including total repos, contributors, commits, and stars
-- **Mock GitHub API**: Simulates GitHub API calls for repository data (stars, forks, commits, contributors)
+- **Statistics Dashboard**: Real-time stats including total repos and active contributors
+- **URL Sharing**: Generate shareable URLs with encoded challenge data and capture timestamps
 - **Local Storage**: Persists repository configurations and cached data in browser localStorage
 - **GitHub Integration**: Direct links to fork repositories and create pull requests
+- **Git Workflow Guide**: Step-by-step instructions for contributors and project owners
 - **Responsive Design**: Mobile-first design with Tailwind CSS styling
 - **Admin Panel**: Easy repository management (add/remove/refresh)
 
@@ -113,15 +114,25 @@ npm test -- --coverage
 1. Click the **Settings** icon in the header to open the Admin Panel
 2. Click **"Add Repository"** to open the repository form
 3. Enter the GitHub repository URL (e.g., `https://github.com/username/repo-name`)
-4. Select the challenge day (Monday-Friday)
-5. Click **"Add Repository"** to save
+4. Add a description for the repository
+5. Enter contributor usernames (comma-separated)
+6. Optionally add a demo URL
+7. Click **"Add Repository"** to save
 
 ### Managing Repositories
 
 - **View**: All repositories are displayed in the main dashboard
-- **Filter**: Use the day filter to view repositories by challenge day
 - **Refresh**: Click the refresh button in the Admin Panel to update repository data
 - **Remove**: Use the trash icon in the Admin Panel to remove repositories
+- **Share**: Click the share icon in the header to generate a shareable URL with all challenge data
+
+### Sharing Challenge Data
+
+- **Generate URL**: Click the share button to create a URL with encoded challenge data
+- **Copy to Clipboard**: One-click copying of the shared URL
+- **Data Capture**: Each shared URL includes a timestamp showing when the data was captured
+- **Automatic Loading**: When someone visits a shared URL, all challenge data loads automatically
+- **Freshness Indicator**: Clear display of when the shared data was captured
 
 ### Challenge Workflow
 
@@ -137,7 +148,9 @@ The app supports a 5-day collaborative coding challenge:
 - **ChallengeHub**: Main dashboard component managing application state
 - **AdminPanel**: Modal component for repository management
 - **AddRepositoryModal**: Form component for adding new repositories
+- **GitWorkflowGuide**: Modal component with step-by-step Git instructions
 - **Repository Cards**: Individual repository display with stats and actions
+- **Share Modal**: Component for generating and copying shareable URLs
 
 ## 🔧 Development
 
@@ -181,6 +194,10 @@ The app is configured with:
 - `admin_panel_opened` - When admin panel is accessed
 - `data_refreshed` - When repository data is refreshed
 - `github_link_clicked` - When users click GitHub links
+- `git_guide_opened` - When users open the Git workflow guide
+- `share_url_generated` - When users generate a shareable URL
+- `share_url_copied` - When users copy a shareable URL
+- `shared_data_loaded` - When users load data from a shared URL
 - `app_initialized` - When the app loads
 
 ### Viewing Data
@@ -194,8 +211,10 @@ The app is configured with:
 
 The application uses React hooks for state management:
 - `challengeRepos`: Array of repository configurations
-- `repoData`: Cached GitHub API response data
-- `selectedDay`: Filter for viewing repositories by day
+- `repoData`: Cached repository metadata
+- `sharedUrl`: Generated shareable URL with encoded data
+- `dataCaptureDate`: Timestamp when shared data was captured
+- `showShareModal`: Controls the share modal visibility
 - Local storage integration for persistence
 
 ### Styling
@@ -205,14 +224,23 @@ The application uses React hooks for state management:
 - **Color Scheme**: Purple/blue theme
 - **Icons**: Lucide React icon library
 
-## 📊 Mock Data
+## 📊 Data Management
 
-The application currently uses mock data to simulate GitHub API responses. In a production environment, you would:
+The application uses user-provided data for repository information:
 
-1. Replace the `fetchRepoData` function with actual GitHub API calls
-2. Add proper authentication (GitHub OAuth)
-3. Implement rate limiting and caching
-4. Add error handling for API failures
+- **Repository Metadata**: Basic info extracted from GitHub URLs (owner, repo name)
+- **Contributor Management**: Users manually input contributor usernames
+- **URL Sharing**: All challenge data is encoded in shareable URLs with timestamps
+- **Local Storage**: Data persists in browser localStorage for convenience
+- **No External APIs**: No GitHub API calls required, reducing complexity and rate limiting concerns
+
+### Future Enhancements
+
+For enhanced functionality, you could:
+1. Integrate with GitHub API for real-time repository statistics
+2. Add GitHub OAuth for authenticated access
+3. Implement webhook support for automatic updates
+4. Add collaborative features with real-time synchronization
 
 ## 🤝 Contributing
 
