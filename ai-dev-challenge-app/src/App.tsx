@@ -131,11 +131,17 @@ const ChallengeHub = () => {
         trackError(error as Error, { action: 'decode_shared_data' });
       }
     } else {
+      // Clear URL parameters if they exist but are invalid
+      if (window.location.search) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
       // Load from localStorage
       const savedRepos = JSON.parse(localStorage.getItem('challengeRepos') || '[]');
+      console.log('Loading saved repos from localStorage:', savedRepos);
       setChallengeRepos(savedRepos);
       
       const savedRepoData = JSON.parse(localStorage.getItem('repoData') || '{}');
+      console.log('Loading saved repo data from localStorage:', savedRepoData);
       setRepoData(savedRepoData);
 
       if (savedRepos.length > 0 && Object.keys(savedRepoData).length === 0) {
@@ -146,21 +152,26 @@ const ChallengeHub = () => {
 
   // Save to localStorage whenever challengeRepos changes
   useEffect(() => {
+    console.log('Saving challengeRepos to localStorage:', challengeRepos);
     localStorage.setItem('challengeRepos', JSON.stringify(challengeRepos));
   }, [challengeRepos]);
 
   // Save repo data to localStorage
   useEffect(() => {
+    console.log('Saving repoData to localStorage:', repoData);
     localStorage.setItem('repoData', JSON.stringify(repoData));
   }, [repoData]);
 
   const addRepository = (repoConfig: Omit<RepoConfig, 'id' | 'dateAdded'>) => {
+    console.log('Adding repository:', repoConfig);
     const newRepo = { 
       ...repoConfig, 
       id: Date.now(), 
       dateAdded: new Date().toISOString() 
     };
+    console.log('New repo object:', newRepo);
     const newRepos = [...challengeRepos, newRepo];
+    console.log('Updated repos array:', newRepos);
     setChallengeRepos(newRepos);
     
     // Track repository addition
