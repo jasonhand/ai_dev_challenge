@@ -45,8 +45,7 @@ const ChallengeHub = () => {
   const [challengeRepos, setChallengeRepos] = useState<RepoConfig[]>([]);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAddRepo, setShowAddRepo] = useState(false);
-  const [showGitGuide, setShowGitGuide] = useState(false);
-  const { token, isValid, isValidating, user, validateToken, clearToken } = useGitHubToken();
+  const { isValid, isValidating, user, validateToken, clearToken } = useGitHubToken();
   const [authLoading, setAuthLoading] = useState(false);
   const { trackRepositoryAction, trackAdminAction, trackError, trackUserInteraction } = useDatadogTracking();
   const [challengeStartDate] = useState<Date>(() => {
@@ -186,7 +185,7 @@ const ChallengeHub = () => {
         }
       }
     }
-  }, [hasInitialized, fetchAllRepoData]);
+  }, [hasInitialized, fetchAllRepoData, defaultRepo, trackError, trackUserInteraction]);
 
   // Save to localStorage whenever challengeRepos changes
   useEffect(() => {
@@ -397,16 +396,7 @@ const ChallengeHub = () => {
               >
                 <Share2 className="h-5 w-5" />
               </button>
-              <button
-                onClick={() => {
-                  setShowGitGuide(true);
-                  trackUserInteraction('open_git_guide');
-                }}
-                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Git Workflow Guide"
-              >
-                <BookOpen className="h-5 w-5" />
-              </button>
+
               <button
                 onClick={() => {
                   setShowAdminPanel(true);
