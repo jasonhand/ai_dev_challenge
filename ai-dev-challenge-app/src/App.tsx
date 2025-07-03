@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Github, ExternalLink, Calendar, Users, Code, Zap, Settings, Plus, X, Trash2, BookOpen, Share2, Copy } from 'lucide-react';
+import { Github, Users, Code, Zap, Settings, Plus, X, Trash2, BookOpen, Share2, Copy } from 'lucide-react';
+import { ApolloProvider } from '@apollo/client';
+import { apolloClient } from './services/apolloClient';
+import { GitHubAuth } from './services/githubAuth';
 import { DatadogRUM, useDatadogTracking } from './components/DatadogRUM';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { GitWorkflowGuide } from './components/GitWorkflowGuide';
+import { EnhancedRepositoryCard } from './components/dashboard/EnhancedRepositoryCard';
+import { useGitHubToken } from './hooks/useGitHubToken';
 
 interface RepoConfig {
   id: number;
@@ -42,7 +46,8 @@ const ChallengeHub = () => {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAddRepo, setShowAddRepo] = useState(false);
   const [showGitGuide, setShowGitGuide] = useState(false);
-  const [selectedRepoForGuide, setSelectedRepoForGuide] = useState<string>('');
+  const { token, isValid, isValidating, user, validateToken, clearToken } = useGitHubToken();
+  const [authLoading, setAuthLoading] = useState(false);
   const { trackRepositoryAction, trackAdminAction, trackError, trackUserInteraction } = useDatadogTracking();
   const [challengeStartDate] = useState<Date>(() => {
     // Get Monday of current week as default start date
@@ -58,6 +63,7 @@ const ChallengeHub = () => {
   const [sharedUrl, setSharedUrl] = useState<string>('');
   const [dataCaptureDate, setDataCaptureDate] = useState<string>('');
   const [showShareModal, setShowShareModal] = useState(false);
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   // Mock GitHub API fetch (in real app, use actual GitHub API)
   const fetchRepoData = async (repoUrl: string): Promise<RepoData | null> => {
@@ -102,8 +108,22 @@ const ChallengeHub = () => {
     setLoading(false);
   }, []);
 
+  // Default repository that's always included
+  const defaultRepo: RepoConfig = {
+    id: 1,
+    name: "Ambient Weather",
+    description: "Dashboard",
+    repoUrl: "https://github.com/jasonhand/ambient-weather",
+    demoUrl: "https://ambient-weather.lovable.app/",
+    contributors: ["jasonhand"],
+    dateAdded: new Date().toISOString()
+  };
+
   // Load challenge repos from browser storage on mount
   useEffect(() => {
+    if (hasInitialized) return;
+    setHasInitialized(true);
+    
     // Check for shared data in URL first
     const urlParams = new URLSearchParams(window.location.search);
     const sharedData = urlParams.get('data');
@@ -112,18 +132,24 @@ const ChallengeHub = () => {
     if (sharedData && captureDate) {
       try {
         const decodedData = JSON.parse(atob(sharedData));
-        setChallengeRepos(decodedData.repos || []);
+        const repos = decodedData.repos || [];
+        // Ensure default repo is always included
+        const reposWithDefault = repos.some((repo: RepoConfig) => repo.repoUrl === defaultRepo.repoUrl) 
+          ? repos 
+          : [defaultRepo, ...repos];
+        
+        setChallengeRepos(reposWithDefault);
         setRepoData(decodedData.repoData || {});
         setDataCaptureDate(captureDate);
         setSharedUrl(window.location.href);
         
         // Save to localStorage
-        localStorage.setItem('challengeRepos', JSON.stringify(decodedData.repos || []));
+        localStorage.setItem('challengeRepos', JSON.stringify(reposWithDefault));
         localStorage.setItem('repoData', JSON.stringify(decodedData.repoData || {}));
         
         // Track shared data load
         trackUserInteraction('load_shared_data', { 
-          repo_count: (decodedData.repos || []).length,
+          repo_count: reposWithDefault.length,
           capture_date: captureDate 
         });
       } catch (error) {
@@ -135,44 +161,64 @@ const ChallengeHub = () => {
       if (window.location.search) {
         window.history.replaceState({}, document.title, window.location.pathname);
       }
+      
       // Load from localStorage
       const savedRepos = JSON.parse(localStorage.getItem('challengeRepos') || '[]');
-      console.log('Loading saved repos from localStorage:', savedRepos);
-      setChallengeRepos(savedRepos);
+      
+      // Ensure default repo is always included
+      const reposWithDefault = savedRepos.some((repo: RepoConfig) => repo.repoUrl === defaultRepo.repoUrl) 
+        ? savedRepos 
+        : [defaultRepo, ...savedRepos];
+      
+      setChallengeRepos(reposWithDefault);
       
       const savedRepoData = JSON.parse(localStorage.getItem('repoData') || '{}');
-      console.log('Loading saved repo data from localStorage:', savedRepoData);
       setRepoData(savedRepoData);
 
-      if (savedRepos.length > 0 && Object.keys(savedRepoData).length === 0) {
-        fetchAllRepoData(savedRepos);
+      // If we have repos but no repo data, fetch it
+      if (reposWithDefault.length > 0 && Object.keys(savedRepoData).length === 0) {
+        fetchAllRepoData(reposWithDefault);
+      } else if (reposWithDefault.length > 0) {
+        // Always fetch data for repos that don't have data yet
+        const reposWithoutData = reposWithDefault.filter((repo: RepoConfig) => !savedRepoData[repo.repoUrl]);
+        if (reposWithoutData.length > 0) {
+          fetchAllRepoData(reposWithoutData);
+        }
       }
     }
-  }, [fetchAllRepoData, trackError, trackUserInteraction]);
+  }, [hasInitialized, fetchAllRepoData]);
 
   // Save to localStorage whenever challengeRepos changes
   useEffect(() => {
-    console.log('Saving challengeRepos to localStorage:', challengeRepos);
-    localStorage.setItem('challengeRepos', JSON.stringify(challengeRepos));
+    if (challengeRepos.length > 0) {
+      localStorage.setItem('challengeRepos', JSON.stringify(challengeRepos));
+    }
   }, [challengeRepos]);
 
   // Save repo data to localStorage
   useEffect(() => {
-    console.log('Saving repoData to localStorage:', repoData);
-    localStorage.setItem('repoData', JSON.stringify(repoData));
+    if (Object.keys(repoData).length > 0) {
+      localStorage.setItem('repoData', JSON.stringify(repoData));
+    }
   }, [repoData]);
 
   const addRepository = (repoConfig: Omit<RepoConfig, 'id' | 'dateAdded'>) => {
-    console.log('Adding repository:', repoConfig);
     const newRepo = { 
       ...repoConfig, 
       id: Date.now(), 
       dateAdded: new Date().toISOString() 
     };
-    console.log('New repo object:', newRepo);
-    const newRepos = [...challengeRepos, newRepo];
-    console.log('Updated repos array:', newRepos);
+    
+    // Ensure default repo is always included
+    const currentRepos = challengeRepos.some(repo => repo.repoUrl === defaultRepo.repoUrl) 
+      ? challengeRepos 
+      : [defaultRepo, ...challengeRepos];
+    
+    const newRepos = [...currentRepos, newRepo];
     setChallengeRepos(newRepos);
+    
+    // Save to localStorage immediately
+    localStorage.setItem('challengeRepos', JSON.stringify(newRepos));
     
     // Track repository addition
     trackRepositoryAction('added', repoConfig.repoUrl, repoConfig.name);
@@ -180,7 +226,9 @@ const ChallengeHub = () => {
     
     fetchRepoData(repoConfig.repoUrl).then(data => {
       if (data) {
-        setRepoData(prev => ({ ...prev, [repoConfig.repoUrl]: data }));
+        const newRepoData = { ...repoData, [repoConfig.repoUrl]: data };
+        setRepoData(newRepoData);
+        localStorage.setItem('repoData', JSON.stringify(newRepoData));
       }
     }).catch(error => {
       trackError(error, { action: 'fetch_repo_data', repo_url: repoConfig.repoUrl });
@@ -190,10 +238,23 @@ const ChallengeHub = () => {
   };
 
   const removeRepository = (repoUrl: string) => {
-    setChallengeRepos(prev => prev.filter(repo => repo.repoUrl !== repoUrl));
+    // Don't allow removal of the default repo
+    if (repoUrl === defaultRepo.repoUrl) {
+      alert('Cannot remove the default Ambient Weather repository');
+      return;
+    }
+    
+    const newRepos = challengeRepos.filter(repo => repo.repoUrl !== repoUrl);
+    setChallengeRepos(newRepos);
+    
+    // Save to localStorage immediately
+    localStorage.setItem('challengeRepos', JSON.stringify(newRepos));
+    
     setRepoData(prev => {
       const newData = { ...prev };
       delete newData[repoUrl];
+      // Save repo data to localStorage
+      localStorage.setItem('repoData', JSON.stringify(newData));
       return newData;
     });
     
@@ -270,33 +331,28 @@ const ChallengeHub = () => {
     return 'bg-gray-300'; // Future days
   };
   
-  const getForkUrl = (repoUrl: string): string => {
-    // Convert GitHub repo URL to fork URL
-    const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
-    if (match) {
-      return `${repoUrl}/fork`;
+
+
+  // GitHub Authentication functions
+  const handleGitHubAuth = async () => {
+    setAuthLoading(true);
+    try {
+      const newToken = await GitHubAuth.authenticateWithGitHub();
+      if (newToken) {
+        await validateToken();
+        trackUserInteraction('github_auth_success');
+      }
+    } catch (error) {
+      console.error('Authentication failed:', error);
+      trackError(error as Error, { action: 'github_auth_failed' });
+    } finally {
+      setAuthLoading(false);
     }
-    return repoUrl;
-  };
-  
-  const getPullRequestUrl = (repoUrl: string): string => {
-    // Convert GitHub repo URL to create PR URL
-    const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
-    if (match) {
-      return `${repoUrl}/compare`;
-    }
-    return repoUrl;
   };
 
-  const getTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-    
-    if (diffHours < 1) return 'Just now';
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
+  const handleLogout = () => {
+    clearToken();
+    trackUserInteraction('github_logout');
   };
 
   return (
@@ -308,6 +364,32 @@ const ChallengeHub = () => {
             <Zap className="h-8 w-8 text-purple-600 mr-2" />
             <h1 className="text-4xl font-bold text-gray-900">AI Dev Challenge Hub</h1>
             <div className="ml-4 flex space-x-2">
+              {/* GitHub Authentication */}
+              {!isValid ? (
+                <button
+                  onClick={handleGitHubAuth}
+                  disabled={authLoading || isValidating}
+                  className="bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+                  title="Connect GitHub"
+                >
+                  {authLoading || isValidating ? 'Connecting...' : 'Connect GitHub'}
+                </button>
+              ) : (
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={handleLogout}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                    title="Disconnect GitHub"
+                  >
+                    {user ? `Connected as ${user.login}` : 'GitHub Connected'}
+                  </button>
+                  {user?.login === 'Rate Limited' && (
+                    <div className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-200">
+                      API Rate Limited
+                    </div>
+                  )}
+                </div>
+              )}
               <button
                 onClick={generateShareUrl}
                 className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
@@ -347,6 +429,8 @@ const ChallengeHub = () => {
               </p>
             </div>
           )}
+          
+
           
           {/* Progress Timeline */}
           <div className="flex justify-center items-center space-x-4 mb-6">
@@ -444,146 +528,15 @@ const ChallengeHub = () => {
           <div>
             <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Available Projects ({challengeRepos.length})</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {challengeRepos.map(repoConfig => {
-              const data = repoData[repoConfig.repoUrl];
-              
-              return (
-                <div key={repoConfig.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
-                  <div className="p-6">
-                    <div className="mb-4">
-                      <h3 className="text-xl font-bold text-gray-900 mb-2">
-                        {data?.name || repoConfig.name || 'Loading...'}
-                      </h3>
-                    </div>
-                    
-                    <p className="text-gray-600 mb-4 text-sm">
-                      {data?.description || repoConfig.description || 'Repository description loading...'}
-                    </p>
-                    
-                    {data && (
-                      <>
-                        <div className="space-y-2 mb-4">
-                          <div className="flex items-center text-sm text-gray-500">
-                            <Github className="h-4 w-4 mr-2" />
-                            <span>{data.owner}/{data.repo}</span>
-                          </div>
-                          <div className="flex items-center text-sm text-gray-500">
-                            <Calendar className="h-4 w-4 mr-2" />
-                            <span>Updated {getTimeAgo(data.updated)}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center space-x-4 text-sm text-gray-500">
-                            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                              Challenge Repo
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="mb-4">
-                          <p className="text-xs text-gray-500 mb-1">Contributors:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {repoConfig.contributors && repoConfig.contributors.length > 0 ? (
-                              <>
-                                {repoConfig.contributors.slice(0, 5).map((contributor, index) => (
-                                  <span key={index} className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
-                                    @{contributor}
-                                  </span>
-                                ))}
-                                {repoConfig.contributors.length > 5 && (
-                                  <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">
-                                    +{repoConfig.contributors.length - 5} more
-                                  </span>
-                                )}
-                              </>
-                            ) : (
-                              <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">
-                                No contributors added yet
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </>
-                    )}
-
-                    <div className="space-y-3">
-                      {/* Get Started Button */}
-                      <button
-                        onClick={() => {
-                          setSelectedRepoForGuide(repoConfig.repoUrl);
-                          setShowGitGuide(true);
-                          trackUserInteraction('open_git_guide_for_repo', { repo_url: repoConfig.repoUrl });
-                        }}
-                        className={`w-full px-3 py-2 rounded-lg font-medium transition-colors flex items-center justify-center text-sm ${
-                          currentDayIndex === -1 || currentDayIndex >= 5
-                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}
-                        disabled={currentDayIndex === -1 || currentDayIndex >= 5}
-                      >
-                        <BookOpen className="h-4 w-4 mr-1" />
-                        {currentDayIndex === -1 ? 'Challenge Not Started' : currentDayIndex >= 5 ? 'Challenge Ended' : 'Get Started Guide'}
-                      </button>
-                      
-                      {/* Contribution Actions */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <a
-                          href={getForkUrl(repoConfig.repoUrl)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={`px-3 py-2 rounded-lg font-medium transition-colors flex items-center justify-center text-sm ${
-                            currentDayIndex === -1 || currentDayIndex >= 5
-                              ? 'bg-gray-300 text-gray-500 cursor-not-allowed pointer-events-none'
-                              : 'bg-purple-600 text-white hover:bg-purple-700'
-                          }`}
-                        >
-                          <Github className="h-4 w-4 mr-1" />
-                          {currentDayIndex === -1 ? 'Not Started' : currentDayIndex >= 5 ? 'Challenge Ended' : 'Fork & Contribute'}
-                        </a>
-                        <a
-                          href={getPullRequestUrl(repoConfig.repoUrl)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={`px-3 py-2 rounded-lg font-medium transition-colors flex items-center justify-center text-sm ${
-                            currentDayIndex === -1 || currentDayIndex >= 5
-                              ? 'bg-gray-300 text-gray-500 cursor-not-allowed pointer-events-none'
-                              : 'bg-green-600 text-white hover:bg-green-700'
-                          }`}
-                        >
-                          <Plus className="h-4 w-4 mr-1" />
-                          Create PR
-                        </a>
-                      </div>
-                      
-                      {/* Repository Links */}
-                      <div className="flex space-x-2">
-                        <a 
-                          href={repoConfig.repoUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="flex-1 bg-gray-900 text-white px-3 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors flex items-center justify-center text-sm"
-                        >
-                          <Github className="h-4 w-4 mr-1" />
-                          View Repo
-                        </a>
-                        {repoConfig.demoUrl && (
-                          <a 
-                            href={repoConfig.demoUrl} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center text-sm"
-                          >
-                            <ExternalLink className="h-4 w-4 mr-1" />
-                            Live Demo
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+              {challengeRepos.map(repoConfig => (
+                <EnhancedRepositoryCard
+                  key={repoConfig.id}
+                  repoUrl={repoConfig.repoUrl}
+                  description={repoConfig.description}
+                  contributors={repoConfig.contributors}
+                  demoUrl={repoConfig.demoUrl}
+                />
+              ))}
             </div>
           </div>
         )}
@@ -607,13 +560,7 @@ const ChallengeHub = () => {
           />
         )}
 
-        {/* Git Workflow Guide Modal */}
-        {showGitGuide && (
-          <GitWorkflowGuide
-            repoUrl={selectedRepoForGuide}
-            onClose={() => setShowGitGuide(false)}
-          />
-        )}
+
 
         {/* Share Challenge Modal */}
         {showShareModal && (
@@ -978,11 +925,13 @@ const AddRepositoryModal: React.FC<AddRepositoryModalProps> = ({ onSubmit, onClo
 
 function App() {
   return (
-    <ErrorBoundary>
-      <DatadogRUM>
-        <ChallengeHub />
-      </DatadogRUM>
-    </ErrorBoundary>
+    <ApolloProvider client={apolloClient}>
+      <ErrorBoundary>
+        <DatadogRUM>
+          <ChallengeHub />
+        </DatadogRUM>
+      </ErrorBoundary>
+    </ApolloProvider>
   );
 }
 

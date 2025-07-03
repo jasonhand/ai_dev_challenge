@@ -7,6 +7,11 @@ interface DatadogRUMProps {
 
 export const DatadogRUM: React.FC<DatadogRUMProps> = ({ children }) => {
   useEffect(() => {
+    // Check if Datadog RUM is already initialized
+    if (datadogRum.getInternalContext()) {
+      return;
+    }
+
     // Initialize Datadog RUM
     datadogRum.init({
       applicationId: '56ff3e23-90fa-45d7-94e7-7b24f9bfa2e3',
