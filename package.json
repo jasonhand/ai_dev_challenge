@@ -1,0 +1,16 @@
+{
+  "name": "ai-dev-challenge",
+  "scripts": {
+    "dev": "cd ai-dev-challenge-app && npm start",
+    "build": "cd ai-dev-challenge-app && npm run build",
+    "test": "cd ai-dev-challenge-app && npm test"
+  },
+  "dependencies": {
+    "lucide-react": "^0.525.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.11"
+  }
+}
