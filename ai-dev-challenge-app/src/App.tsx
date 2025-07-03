@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Github, ExternalLink, Calendar, Users, Code, Zap, Settings, Plus, X, Trash2, BookOpen, Share2, Copy } from 'lucide-react';
 import { DatadogRUM, useDatadogTracking } from './components/DatadogRUM';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -59,6 +59,49 @@ const ChallengeHub = () => {
   const [dataCaptureDate, setDataCaptureDate] = useState<string>('');
   const [showShareModal, setShowShareModal] = useState(false);
 
+  // Mock GitHub API fetch (in real app, use actual GitHub API)
+  const fetchRepoData = async (repoUrl: string): Promise<RepoData | null> => {
+    // Extract owner/repo from GitHub URL
+    const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+    if (!match) return null;
+    
+    const [, owner, repo] = match;
+    
+      // Return basic repo info without mock data
+  return new Promise(resolve => {
+    setTimeout(() => {
+      resolve({
+        name: repo.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        description: `A demo project for the AI Dev Challenge`,
+        owner: owner,
+        repo: repo,
+        url: repoUrl,
+        updated: new Date().toISOString(),
+        contributors: [owner]
+      });
+    }, 100);
+  });
+  };
+
+  const fetchAllRepoData = useCallback(async (repos: RepoConfig[]) => {
+    setLoading(true);
+    const newRepoData: Record<string, RepoData> = {};
+    
+    for (const repoConfig of repos) {
+      try {
+        const data = await fetchRepoData(repoConfig.repoUrl);
+        if (data) {
+          newRepoData[repoConfig.repoUrl] = data;
+        }
+      } catch (error) {
+        console.error(`Failed to fetch data for ${repoConfig.repoUrl}:`, error);
+      }
+    }
+    
+    setRepoData(prev => ({ ...prev, ...newRepoData }));
+    setLoading(false);
+  }, []);
+
   // Load challenge repos from browser storage on mount
   useEffect(() => {
     // Check for shared data in URL first
@@ -99,7 +142,7 @@ const ChallengeHub = () => {
         fetchAllRepoData(savedRepos);
       }
     }
-  }, [trackError, trackUserInteraction]);
+  }, [fetchAllRepoData, trackError, trackUserInteraction]);
 
   // Save to localStorage whenever challengeRepos changes
   useEffect(() => {
@@ -110,49 +153,6 @@ const ChallengeHub = () => {
   useEffect(() => {
     localStorage.setItem('repoData', JSON.stringify(repoData));
   }, [repoData]);
-
-  // Mock GitHub API fetch (in real app, use actual GitHub API)
-  const fetchRepoData = async (repoUrl: string): Promise<RepoData | null> => {
-    // Extract owner/repo from GitHub URL
-    const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
-    if (!match) return null;
-    
-    const [, owner, repo] = match;
-    
-      // Return basic repo info without mock data
-  return new Promise(resolve => {
-    setTimeout(() => {
-      resolve({
-        name: repo.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        description: `A demo project for the AI Dev Challenge`,
-        owner: owner,
-        repo: repo,
-        url: repoUrl,
-        updated: new Date().toISOString(),
-        contributors: [owner]
-      });
-    }, 100);
-  });
-  };
-
-  const fetchAllRepoData = async (repos: RepoConfig[]) => {
-    setLoading(true);
-    const newRepoData: Record<string, RepoData> = {};
-    
-    for (const repoConfig of repos) {
-      try {
-        const data = await fetchRepoData(repoConfig.repoUrl);
-        if (data) {
-          newRepoData[repoConfig.repoUrl] = data;
-        }
-      } catch (error) {
-        console.error(`Failed to fetch data for ${repoConfig.repoUrl}:`, error);
-      }
-    }
-    
-    setRepoData(prev => ({ ...prev, ...newRepoData }));
-    setLoading(false);
-  };
 
   const addRepository = (repoConfig: Omit<RepoConfig, 'id' | 'dateAdded'>) => {
     const newRepo = { 
