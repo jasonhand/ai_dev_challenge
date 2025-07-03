@@ -99,7 +99,7 @@ const ChallengeHub = () => {
         fetchAllRepoData(savedRepos);
       }
     }
-  }, []);
+  }, [trackError, trackUserInteraction]);
 
   // Save to localStorage whenever challengeRepos changes
   useEffect(() => {
@@ -114,7 +114,7 @@ const ChallengeHub = () => {
   // Mock GitHub API fetch (in real app, use actual GitHub API)
   const fetchRepoData = async (repoUrl: string): Promise<RepoData | null> => {
     // Extract owner/repo from GitHub URL
-    const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
     if (!match) return null;
     
     const [, owner, repo] = match;
@@ -261,7 +261,7 @@ const ChallengeHub = () => {
   
   const getForkUrl = (repoUrl: string): string => {
     // Convert GitHub repo URL to fork URL
-    const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
     if (match) {
       return `${repoUrl}/fork`;
     }
@@ -270,7 +270,7 @@ const ChallengeHub = () => {
   
   const getPullRequestUrl = (repoUrl: string): string => {
     // Convert GitHub repo URL to create PR URL
-    const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
     if (match) {
       return `${repoUrl}/compare`;
     }

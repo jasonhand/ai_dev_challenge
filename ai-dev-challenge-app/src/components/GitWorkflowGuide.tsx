@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GitBranch, Copy, Check, ExternalLink, Terminal, Github, Code, GitPullRequest } from 'lucide-react';
+import { GitBranch, Copy, Check, Terminal, Github, Code, GitPullRequest } from 'lucide-react';
 
 interface GitWorkflowGuideProps {
   repoUrl: string;
